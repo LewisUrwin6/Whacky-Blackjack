@@ -32,6 +32,19 @@
             100% { background-position: 0% 50%; }
         }
         
+        @keyframes bodyShake {
+            0%, 100% { transform: translateX(0); }
+            10% { transform: translateX(-10px); }
+            20% { transform: translateX(10px); }
+            30% { transform: translateX(-10px); }
+            40% { transform: translateX(10px); }
+            50% { transform: translateX(-10px); }
+            60% { transform: translateX(10px); }
+            70% { transform: translateX(-10px); }
+            80% { transform: translateX(10px); }
+            90% { transform: translateX(-10px); }
+        }
+        
         .game-container {
             background: rgba(0, 0, 0, 0.8);
             border-radius: 30px;
@@ -66,9 +79,22 @@
             border-radius: 20px;
             padding: 20px;
             margin: 10px 0;
-            min-height: 150px;
+            min-height: 180px;
             position: relative;
             overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .card-area h2 {
+            margin: 0 0 10px 0;
+        }
+        
+        .cards-container {
+            min-height: 130px;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
         }
         
         .card-area::before {
@@ -172,10 +198,10 @@
         .hit-btn {
             background: linear-gradient(45deg, #ff006e, #fb5607);
             color: white;
-            animation: shake 2s ease-in-out infinite;
+            animation: buttonShake 2s ease-in-out infinite;
         }
         
-        @keyframes shake {
+        @keyframes buttonShake {
             0%, 100% { transform: translateX(0); }
             25% { transform: translateX(-5px); }
             75% { transform: translateX(5px); }
@@ -405,7 +431,11 @@
             
             .card-area {
                 padding: 15px;
-                min-height: 120px;
+                min-height: 160px;
+            }
+            
+            .cards-container {
+                min-height: 110px;
             }
             
             .buttons {
@@ -471,12 +501,49 @@
                 font-size: 1.3em;
             }
         }
+        
+        .sound-toggle {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: linear-gradient(45deg, #3a86ff, #06ffa5);
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 1.5em;
+            cursor: pointer;
+            z-index: 101;
+            box-shadow: 0 0 20px rgba(58, 134, 255, 0.5);
+            animation: soundPulse 2s ease-in-out infinite;
+            transition: transform 0.3s ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .sound-toggle:hover {
+            transform: scale(1.1);
+        }
+        
+        .sound-toggle:active {
+            transform: scale(0.95);
+        }
+        
+        .sound-toggle.muted {
+            background: linear-gradient(45deg, #666, #999);
+            animation: none;
+        }
+        
+        @keyframes soundPulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(58, 134, 255, 0.5); }
+            50% { box-shadow: 0 0 40px rgba(58, 134, 255, 0.8); }
+        }
     </style>
 </head>
 <body>
     <div class="special-effects" id="effects"></div>
     
     <button class="score-toggle" onclick="toggleScoreboard()">📊</button>
+    <button class="sound-toggle" id="soundToggle" onclick="toggleSound()">🔊</button>
     
     <div class="game-container">
         <div class="scoreboard hidden" id="scoreboard">
@@ -514,14 +581,14 @@
         <h1>🎰 WHACKY BLACKJACK 🎰</h1>
         
         <div class="card-area">
-            <h2 style="color: #8338ec; margin-bottom: 10px;">Dealer's Hand</h2>
-            <div id="dealerCards"></div>
+            <h2 style="color: #8338ec;">Dealer's Hand</h2>
+            <div class="cards-container" id="dealerCards"></div>
             <div class="score-display">Score: <span id="dealerScore">0</span></div>
         </div>
         
         <div class="card-area">
-            <h2 style="color: #3a86ff; margin-bottom: 10px;">Your Hand</h2>
-            <div id="playerCards"></div>
+            <h2 style="color: #3a86ff;">Your Hand</h2>
+            <div class="cards-container" id="playerCards"></div>
             <div class="score-display">Score: <span id="playerScore">0</span></div>
         </div>
         
@@ -555,6 +622,225 @@
         };
         
         let scoreboardVisible = false;
+        let soundEnabled = true;
+        let musicInterval = null;
+        
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        const sounds = {
+            bgMusic: null,
+            bgMusicNodes: [],
+            cardDeal: null,
+            win: null,
+            lose: null,
+            button: null,
+            powerUp: null
+        };
+        
+        function createCircusMusic() {
+            const nodes = [];
+            
+            const mainOsc = audioContext.createOscillator();
+            const mainGain = audioContext.createGain();
+            const mainFilter = audioContext.createBiquadFilter();
+            mainOsc.type = 'square';
+            mainFilter.type = 'lowpass';
+            mainFilter.frequency.value = 1000;
+            mainGain.gain.value = 0.03;
+            mainOsc.connect(mainFilter);
+            mainFilter.connect(mainGain);
+            mainGain.connect(audioContext.destination);
+            
+            const bassOsc = audioContext.createOscillator();
+            const bassGain = audioContext.createGain();
+            bassOsc.type = 'sawtooth';
+            bassGain.gain.value = 0.02;
+            bassOsc.connect(bassGain);
+            bassGain.connect(audioContext.destination);
+            
+            const notes = [261.63, 329.63, 392.00, 329.63, 261.63, 261.63, 329.63, 392.00, 523.25, 392.00, 
+                          440.00, 392.00, 349.23, 329.63, 293.66, 261.63, 293.66, 329.63, 349.23, 392.00];
+            const bassNotes = [130.81, 130.81, 196.00, 196.00, 130.81, 130.81, 196.00, 196.00];
+            let noteIndex = 0;
+            let bassIndex = 0;
+            let beatCount = 0;
+            
+            function playNextNote() {
+                if (soundEnabled) {
+                    mainOsc.frequency.setValueAtTime(notes[noteIndex], audioContext.currentTime);
+                    noteIndex = (noteIndex + 1) % notes.length;
+                    
+                    if (beatCount % 2 === 0) {
+                        bassOsc.frequency.setValueAtTime(bassNotes[bassIndex], audioContext.currentTime);
+                        bassIndex = (bassIndex + 1) % bassNotes.length;
+                    }
+                    
+                    if (beatCount % 8 === 0) {
+                        const cymbal = audioContext.createOscillator();
+                        const cymbalGain = audioContext.createGain();
+                        const cymbalFilter = audioContext.createBiquadFilter();
+                        cymbal.type = 'triangle';
+                        cymbalFilter.type = 'highpass';
+                        cymbalFilter.frequency.value = 5000;
+                        cymbal.frequency.value = 8000 + Math.random() * 4000;
+                        cymbalGain.gain.setValueAtTime(0.05, audioContext.currentTime);
+                        cymbalGain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
+                        cymbal.connect(cymbalFilter);
+                        cymbalFilter.connect(cymbalGain);
+                        cymbalGain.connect(audioContext.destination);
+                        cymbal.start();
+                        cymbal.stop(audioContext.currentTime + 0.1);
+                    }
+                    
+                    beatCount++;
+                }
+            }
+            
+            mainOsc.start();
+            bassOsc.start();
+            musicInterval = setInterval(playNextNote, 200);
+            
+            sounds.bgMusicNodes = [mainOsc, bassOsc, mainGain, bassGain];
+            
+            return { oscillator: mainOsc, gain: mainGain, bass: bassOsc, bassGain: bassGain };
+        }
+        
+        function playSound(type, frequency = 440, duration = 0.1) {
+            if (!soundEnabled) return;
+            
+            switch(type) {
+                case 'cardDeal':
+                    const whipOsc = audioContext.createOscillator();
+                    const whipGain = audioContext.createGain();
+                    const whipFilter = audioContext.createBiquadFilter();
+                    whipOsc.type = 'sawtooth';
+                    whipFilter.type = 'bandpass';
+                    whipFilter.frequency.value = 1000;
+                    whipFilter.Q.value = 5;
+                    whipOsc.frequency.setValueAtTime(2000, audioContext.currentTime);
+                    whipOsc.frequency.exponentialRampToValueAtTime(200, audioContext.currentTime + 0.15);
+                    whipGain.gain.setValueAtTime(0.3, audioContext.currentTime);
+                    whipGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
+                    whipOsc.connect(whipFilter);
+                    whipFilter.connect(whipGain);
+                    whipGain.connect(audioContext.destination);
+                    whipOsc.start();
+                    whipOsc.stop(audioContext.currentTime + 0.15);
+                    break;
+                    
+                case 'win':
+                    for (let i = 0; i < 8; i++) {
+                        setTimeout(() => {
+                            const winOsc = audioContext.createOscillator();
+                            const winGain = audioContext.createGain();
+                            winOsc.type = i % 2 === 0 ? 'square' : 'triangle';
+                            winOsc.frequency.value = 300 + (i * 100) + Math.random() * 50;
+                            winGain.gain.setValueAtTime(0.2, audioContext.currentTime);
+                            winGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+                            winOsc.connect(winGain);
+                            winGain.connect(audioContext.destination);
+                            winOsc.start();
+                            winOsc.stop(audioContext.currentTime + 0.3);
+                        }, i * 60);
+                    }
+                    
+                    const hornOsc = audioContext.createOscillator();
+                    const hornGain = audioContext.createGain();
+                    hornOsc.type = 'square';
+                    hornOsc.frequency.setValueAtTime(220, audioContext.currentTime);
+                    hornOsc.frequency.setValueAtTime(440, audioContext.currentTime + 0.1);
+                    hornOsc.frequency.setValueAtTime(220, audioContext.currentTime + 0.2);
+                    hornGain.gain.setValueAtTime(0.3, audioContext.currentTime);
+                    hornOsc.connect(hornGain);
+                    hornGain.connect(audioContext.destination);
+                    hornOsc.start();
+                    hornOsc.stop(audioContext.currentTime + 0.5);
+                    break;
+                    
+                case 'lose':
+                    const slideOsc = audioContext.createOscillator();
+                    const slideGain = audioContext.createGain();
+                    const slideFilter = audioContext.createBiquadFilter();
+                    slideOsc.type = 'sawtooth';
+                    slideFilter.type = 'lowpass';
+                    slideFilter.frequency.value = 500;
+                    slideOsc.frequency.setValueAtTime(400, audioContext.currentTime);
+                    slideOsc.frequency.exponentialRampToValueAtTime(50, audioContext.currentTime + 0.5);
+                    slideGain.gain.setValueAtTime(0.3, audioContext.currentTime);
+                    
+                    for (let i = 0; i < 4; i++) {
+                        slideOsc.frequency.setValueAtTime(300 - i * 50, audioContext.currentTime + i * 0.1);
+                    }
+                    
+                    slideOsc.connect(slideFilter);
+                    slideFilter.connect(slideGain);
+                    slideGain.connect(audioContext.destination);
+                    slideOsc.start();
+                    slideOsc.stop(audioContext.currentTime + 0.5);
+                    
+                    setTimeout(() => {
+                        const womp = audioContext.createOscillator();
+                        const wompGain = audioContext.createGain();
+                        womp.type = 'triangle';
+                        womp.frequency.value = 55;
+                        wompGain.gain.setValueAtTime(0.4, audioContext.currentTime);
+                        wompGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+                        womp.connect(wompGain);
+                        wompGain.connect(audioContext.destination);
+                        womp.start();
+                        womp.stop(audioContext.currentTime + 0.2);
+                    }, 300);
+                    break;
+                    
+                case 'button':
+                    const boing = audioContext.createOscillator();
+                    const boingGain = audioContext.createGain();
+                    const boingFilter = audioContext.createBiquadFilter();
+                    boing.type = 'sine';
+                    boingFilter.type = 'bandpass';
+                    boingFilter.frequency.value = 800;
+                    boingFilter.Q.value = 10;
+                    boing.frequency.setValueAtTime(200, audioContext.currentTime);
+                    boing.frequency.exponentialRampToValueAtTime(800, audioContext.currentTime + 0.05);
+                    boing.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.1);
+                    boingGain.gain.setValueAtTime(0.2, audioContext.currentTime);
+                    boingGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                    boing.connect(boingFilter);
+                    boingFilter.connect(boingGain);
+                    boingGain.connect(audioContext.destination);
+                    boing.start();
+                    boing.stop(audioContext.currentTime + 0.1);
+                    break;
+                    
+                case 'powerUp':
+                    for (let i = 0; i < 15; i++) {
+                        setTimeout(() => {
+                            const sparkle = audioContext.createOscillator();
+                            const sparkleGain = audioContext.createGain();
+                            sparkle.type = 'sine';
+                            sparkle.frequency.value = 800 + Math.random() * 2000;
+                            sparkleGain.gain.setValueAtTime(0.1, audioContext.currentTime);
+                            sparkleGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                            sparkle.connect(sparkleGain);
+                            sparkleGain.connect(audioContext.destination);
+                            sparkle.start();
+                            sparkle.stop(audioContext.currentTime + 0.1);
+                        }, i * 30);
+                    }
+                    
+                    const sweep = audioContext.createOscillator();
+                    const sweepGain = audioContext.createGain();
+                    sweep.type = 'triangle';
+                    sweep.frequency.setValueAtTime(100, audioContext.currentTime);
+                    sweep.frequency.exponentialRampToValueAtTime(2000, audioContext.currentTime + 0.4);
+                    sweepGain.gain.setValueAtTime(0.2, audioContext.currentTime);
+                    sweep.connect(sweepGain);
+                    sweepGain.connect(audioContext.destination);
+                    sweep.start();
+                    sweep.stop(audioContext.currentTime + 0.4);
+                    break;
+            }
+        }
         
         function createDeck() {
             deck = [];
@@ -633,6 +919,7 @@
                     setTimeout(() => {
                         cardDiv.style.animation = 'cardDrop 0.5s ease-out';
                     }, 10);
+                    playSound('button');
                 }
             };
             
@@ -649,16 +936,22 @@
             playerCardsDiv.innerHTML = '';
             dealerCardsDiv.innerHTML = '';
             
-            playerHand.forEach(card => {
-                playerCardsDiv.appendChild(renderCard(card));
+            playerHand.forEach((card, index) => {
+                setTimeout(() => {
+                    playerCardsDiv.appendChild(renderCard(card));
+                    playSound('cardDeal');
+                }, index * 100);
             });
             
             dealerHand.forEach((card, index) => {
-                if (index === 0 && !gameOver) {
-                    dealerCardsDiv.appendChild(renderCard(card, true));
-                } else {
-                    dealerCardsDiv.appendChild(renderCard(card));
-                }
+                setTimeout(() => {
+                    if (index === 0 && !gameOver) {
+                        dealerCardsDiv.appendChild(renderCard(card, true));
+                    } else {
+                        dealerCardsDiv.appendChild(renderCard(card));
+                    }
+                    playSound('cardDeal');
+                }, (index + playerHand.length) * 100);
             });
             
             updateScores();
@@ -744,6 +1037,7 @@
         function hit() {
             if (gameOver) return;
             
+            playSound('button');
             playerHand.push(deck.pop());
             renderHands();
             
@@ -754,6 +1048,7 @@
             } else if (playerScore === 21) {
                 document.getElementById('message').textContent = '🎯 BLACKJACK! 🎯';
                 createConfetti();
+                playSound('win');
             }
             
             if (Math.random() < 0.1 && !powerUpActive) {
@@ -765,6 +1060,7 @@
         function stand() {
             if (gameOver) return;
             
+            playSound('button');
             gameOver = true;
             
             while (calculateScore(dealerHand) < 17) {
@@ -806,13 +1102,18 @@
             if (playerScore > 21) {
                 messageDiv.textContent = '💥 BUST! You Lose! 💥';
                 messageDiv.className = 'message lose';
-                document.body.style.animation = 'shake 0.5s ease-in-out';
+                document.body.style.animation = 'bodyShake 0.5s ease-in-out';
+                setTimeout(() => {
+                    document.body.style.animation = '';
+                }, 500);
+                playSound('lose');
                 scores.losses++;
                 scores.currentStreak = 0;
             } else if (dealerScore > 21) {
                 messageDiv.textContent = '🎉 Dealer Bust! You WIN! 🎉';
                 messageDiv.className = 'message win';
                 createConfetti();
+                playSound('win');
                 scores.wins++;
                 scores.currentStreak++;
                 if (scores.currentStreak > scores.bestStreak) {
@@ -822,6 +1123,7 @@
                 messageDiv.textContent = '🏆 You WIN! 🏆';
                 messageDiv.className = 'message win';
                 createConfetti();
+                playSound('win');
                 scores.wins++;
                 scores.currentStreak++;
                 if (scores.currentStreak > scores.bestStreak) {
@@ -830,6 +1132,7 @@
             } else if (dealerScore > playerScore) {
                 messageDiv.textContent = '😭 You Lose! 😭';
                 messageDiv.className = 'message lose';
+                playSound('lose');
                 scores.losses++;
                 scores.currentStreak = 0;
             } else {
@@ -846,6 +1149,7 @@
             
             powerUpActive = true;
             document.getElementById('powerUp').classList.add('hidden');
+            playSound('powerUp');
             
             const effects = [
                 () => {
@@ -873,6 +1177,7 @@
         }
         
         function newGame() {
+            playSound('button');
             createDeck();
             shuffleDeck();
             
@@ -891,6 +1196,7 @@
             if (calculateScore(playerHand) === 21) {
                 document.getElementById('message').textContent = '🎯 BLACKJACK! 🎯';
                 createConfetti();
+                playSound('win');
             }
         }
         
@@ -916,7 +1222,54 @@
             }
         }
         
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            const toggle = document.getElementById('soundToggle');
+            
+            if (soundEnabled) {
+                toggle.innerHTML = '🔊';
+                toggle.classList.remove('muted');
+                if (!sounds.bgMusic) {
+                    sounds.bgMusic = createCircusMusic();
+                } else {
+                    sounds.bgMusic.gain.gain.value = 0.03;
+                    sounds.bgMusic.bassGain.gain.value = 0.02;
+                }
+            } else {
+                toggle.innerHTML = '🔇';
+                toggle.classList.add('muted');
+                if (sounds.bgMusic) {
+                    sounds.bgMusic.gain.gain.value = 0;
+                    sounds.bgMusic.bassGain.gain.value = 0;
+                }
+                if (musicInterval) {
+                    clearInterval(musicInterval);
+                    musicInterval = null;
+                }
+                if (sounds.bgMusicNodes.length > 0) {
+                    sounds.bgMusicNodes.forEach(node => {
+                        try {
+                            if (node.stop) node.stop();
+                            if (node.disconnect) node.disconnect();
+                        } catch (e) {}
+                    });
+                    sounds.bgMusicNodes = [];
+                    sounds.bgMusic = null;
+                }
+            }
+        }
+        
         updateScoreboard();
+        
+        document.addEventListener('click', function initAudio() {
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+            if (!sounds.bgMusic && soundEnabled) {
+                sounds.bgMusic = createCircusMusic();
+            }
+            document.removeEventListener('click', initAudio);
+        }, { once: true });
         
         newGame();
     </script>
